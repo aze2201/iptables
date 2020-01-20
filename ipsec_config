@@ -1,0 +1,52 @@
+#!/bin/bash
+
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT DROP
+
+iptables -A OUTPUT -o lo -j ACCEPT
+iptables -A INPUT  -i lo -j ACCEPT
+
+
+# Config Tunel 
+iptables -t nat -A POSTROUTING -o <WAN interface> -m policy --dir out --pol ipsec -j ACCEPT
+iptables -A INPUT  --in-interface  <WAN interface> -m policy --dir in  --pol ipsec -j ACCEPT
+iptables -A OUTPUT --out-interface <WAN interface> -m policy --dir out --pol ipsec -j ACCEPT
+
+# Allow any packets secured by IPsec to be forwarded as appropriate
+iptables -A FORWARD --in-interface <WAN interface> --out-interface <ETH interface> -m policy --dir in  --pol ipsec -j ACCEPT
+iptables -A FORWARD --in-interface <ETH interface> --out-interface <WAN interface> -m policy --dir out --pol ipsec -j ACCEPT
+
+# Allow any ISAKMP packets to be sent and received
+iptables -A INPUT  --in-interface  <WAN interface> --protocol udp --dport isakmp -j ACCEPT
+iptables -A OUTPUT --out-interface <WAN interface> --protocol udp --dport isakmp -j ACCEPT
+
+# Allow any UDP encapsulated IPsec packets to be sent and received
+iptables -A INPUT  --in-interface  <WAN interface> --protocol udp --dport ipsec-nat-t -j ACCEPT
+iptables -A OUTPUT --out-interface <WAN interface> --protocol udp --sport ipsec-nat-t -j ACCEPT
+iptables -A OUTPUT --out-interface <WAN interface> --protocol udp --dport ipsec-nat-t -j ACCEPT
+iptables -A INPUT  --in-interface  <WAN interface> --protocol udp --sport ipsec-nat-t -m state --state ESTABLISHED -j ACCEPT
+
+
+
+# INCOME and Outgoing from/to Tunel
+iptables -A INPUT  -s <CUSTOMER SERVICE IP> -i <ETH interface>   -m conntrack --ctstate NEW,ESTABLISHED -p tcp -j ACCEPT
+iptables -A INPUT  -s <CUSTOMER SERVICE IP> -i <ETH interface>   -m conntrack --ctstate NEW,ESTABLISHED -p tcp -j ACCEPT
+iptables -A INPUT  -s <CUSTOMER SERVICE IP MORE>  -i <ETH interface>   -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -d <CUSTOMER SERVICE IP MORE>  -o <ETH interface>   -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -d <CUSTOMER SERVICE IP> -o <ETH interface>   -m conntrack --ctstate NEW,ESTABLISHED -p tcp -m tcp --dport <PORT FOR OUTGOING TO CUSTOMER SERVICE IP> -j ACCEPT
+
+
+# INCOME and Outgoing from/to Internet
+iptables -A INPUT  -s <CUSTOMER IPSEC GW IP> -i <WAN interface>  -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A INPUT  -s <CUSTOMER IPSEC GW IP> -i <WAN interface>  -m conntrack --ctstate NEW,ESTABLISHED -p udp -m udp --dport 500  -j ACCEPT
+iptables -A INPUT  -s <CUSTOMER IPSEC GW IP> -i <WAN interface>  -m conntrack --ctstate NEW,ESTABLISHED -p udp -m udp --dport 4500 -j ACCEPT
+iptables -A INPUT  -s <CUSTOMER IPSEC GW IP> -i <WAN interface>  -m conntrack --ctstate NEW,ESTABLISHED -p udp -m udp --dport 1701 -j ACCEPT
+iptables -A OUTPUT -d <CUSTOMER IPSEC GW IP> -o <WAN interface>  -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -d <CUSTOMER IPSEC GW IP> -o <WAN interface>  -m conntrack --ctstate NEW,ESTABLISHED -p udp -m udp --dport 500  -j ACCEPT
+iptables -A OUTPUT -d <CUSTOMER IPSEC GW IP> -o <WAN interface>  -m conntrack --ctstate NEW,ESTABLISHED -p udp -m udp --dport 4500 -j ACCEPT
+iptables -A OUTPUT -d <CUSTOMER IPSEC GW IP> -o <WAN interface>  -m conntrack --ctstate NEW,ESTABLISHED -p udp -m udp --dport 1701 -j ACCEPT
+
+# SSH access from Incuda domain
+iptables -A INPUT  -s <IP FOR ACCESS FROM LOCAL NET WITH SSH>  -p tcp -m tcp --dport 22 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+iptables -A OUTPUT -p tcp -m tcp --sport 22  -m conntrack --ctstate ESTABLISHED -j ACCEPT
